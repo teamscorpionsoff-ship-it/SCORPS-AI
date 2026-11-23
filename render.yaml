@@ -2,6 +2,8 @@ services:
   - type: web
     name: scorpions-ai-api
     runtime: python
+    branch: deploy/render-free
+    autoDeployTrigger: "off"
     plan: free
     buildCommand: python -m pip install -r requirements.txt
     startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
@@ -15,5 +17,9 @@ services:
         value: demo
       - key: DATABASE_URL
         sync: false
-      - key: FRONTEND_ORIGIN
+      - key: SUPABASE_URL
         sync: false
+      - key: SUPABASE_SECRET_KEY
+        sync: false
+      - key: SUPABASE_STORAGE_BUCKET
+        value: scorpions-documents

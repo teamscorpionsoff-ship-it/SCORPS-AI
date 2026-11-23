@@ -1,5 +1,7 @@
 # Scorpions AI
 
+Scorpions_ai-->Fully an automated AI assistant to keep you ahead
+
 Scorpions AI is a local-first browser-based personal staff MVP for the Homingo Hack Days Agents track, A3: “A personal staff for everyone.” It brings daily conversation, task tracking, tentative scheduling, personal memory, documents, and integration status into one user-specific workspace.
 
 ## Capabilities
@@ -18,6 +20,10 @@ Run `python -m pytest`, then start the API and run `python scripts/smoke_api.py`
 
 ## Deployment status
 
-The root render.yaml defines a Free Python web service. Build with `python -m pip install -r requirements.txt` and start with `uvicorn app.main:app --host 0.0.0.0 --port $PORT`. The blueprint sets APP_ENV=production and LLM_PROVIDER=demo and generates APP_SECRET_KEY. In Render's Environment panel, supply DATABASE_URL for a durable PostgreSQL database and FRONTEND_ORIGIN for the approved HTTPS frontend origin (no path or trailing slash). The database role must be able to create the private scorpions schema and its tables. Production uses TLS. Keep the Render management key in the MCP client's environment. Verify GET /health after deployment. It reads the migration table and returns 503 if the database is unavailable.
+The Free Python web service is defined in `render.yaml` on branch `deploy/render-free`. Its build command is `python -m pip install -r requirements.txt`. Its start command is `uvicorn app.main:app --host 0.0.0.0 --port $PORT`. Automatic deploys are disabled. Use a Free workspace without a payment method.
+
+Use `deployment/production.env.example` for the backend settings. In the Supabase Free project, create a **private** Storage bucket named `scorpions-documents` with no public object policies. Get the Postgres session-pooler connection URI from Connect, the project URL from the project dashboard, and a backend secret from Settings → API Keys. Set these as `DATABASE_URL`, `SUPABASE_URL`, and `SUPABASE_SECRET_KEY` in Render's secure environment. The database role needs permission to create the scorpions schema and its tables. Retain existing Supabase projects and bucket contents when redeploying. The blueprint generates `APP_SECRET_KEY` and sets production and demo mode. With no frontend origin configured, browsers receive no cross-origin permission. Set `FRONTEND_ORIGIN` once the approved HTTPS frontend exists.
+
+Before provisioning the service, run `python -m scripts.render_preflight` with the production settings injected into a trusted environment. It checks credentials, database TLS, schema-installation privileges and private bucket write/read/delete using one temporary synthetic object. Startup repeats configuration and bucket checks and applies versioned migrations. After deployment, point `API_BASE_URL` at Render's actual HTTPS service URL and run `python scripts/deploy_check.py`. The /health route queries the database. Keep Render management credentials only in the MCP client's environment.
 
 See `docs/` for product, architecture, security, privacy, integrations, implementation status, tests, and demo instructions. Create a strong random `APP_SECRET_KEY` for any shared environment. Secrets belong in the host's secure environment settings, never in frontend code.

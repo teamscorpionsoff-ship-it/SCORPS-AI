@@ -10,7 +10,7 @@ Google Gmail, Calendar, and Drive OAuth connectors, scopes, secure refresh-token
 
 ## Search and storage
 
-Live search is not implemented. The Source Reader can fetch public HTTPS pages and extract text, but it is not a search engine. Hosted object storage is not implemented. Extracted document text uses the configured SQL database.
+Live search is not implemented. The Source Reader can fetch public HTTPS pages and extract text, but it is not a search engine. Production stores original documents in private Supabase Storage. Local development uses UPLOAD_DIR. Existing text-only records have no original attachment. Extracted document text uses the configured SQL database.
 
 ## Free deployment evaluation (checked 2026-11-23)
 

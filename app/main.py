@@ -8,6 +8,8 @@ from pydantic import BaseModel, Field
 from app.config import get_settings
 from app.db import init_db, session
 from app.auth import current_user, hash_password, verify_password, issue_token
+from app.services import storage
+from fastapi.responses import JSONResponse, Response
 
 settings=get_settings()
 logging.basicConfig(level=settings.log_level, format='%(asctime)s %(levelname)s %(name)s %(message)s')
@@ -16,7 +18,13 @@ async def lifespan(_app):
     startup()
     yield
 app=FastAPI(title=settings.app_name, version='0.1.0', lifespan=lifespan)
-origins=[settings.frontend_origin] if settings.app_env=='production' else list(dict.fromkeys([settings.frontend_origin,'http://127.0.0.1:8501','http://localhost:8501']))
+
+@app.exception_handler(storage.StorageUnavailable)
+async def storage_error(request, error):
+    return JSONResponse(status_code=503, content={"detail": str(error)})
+origins = [settings.frontend_origin] if settings.frontend_origin else []
+if settings.app_env != "production":
+    origins.extend(["http://127.0.0.1:8501", "http://localhost:8501"])
 app.add_middleware(CORSMiddleware, allow_origins=origins, allow_credentials=False, allow_methods=['GET','POST','PUT','DELETE'], allow_headers=['Authorization','Content-Type'])
 
 def startup():
@@ -25,6 +33,8 @@ def startup():
         raise RuntimeError(' '.join(issues))
     for issue in issues:
         logging.warning('%s', issue)
+    if settings.app_env == 'production':
+        storage.check_bucket()
     init_db()
 
 class Register(BaseModel): email: str; name: str=Field(min_length=1,max_length=100); password: str=Field(min_length=10,max_length=200)
@@ -153,16 +163,35 @@ async def upload(file:UploadFile=File(...),u=Depends(current_user)):
         else: raise HTTPException(415,'Supported formats: PDF, DOCX, TXT, MD, CSV.')
     except HTTPException: raise
     except Exception: raise HTTPException(422,'Could not extract text from this file.')
-    os.makedirs(settings.upload_dir,exist_ok=True)
+    key = storage.store_original(u['id'], raw)
+    try:
+        with session() as d:
+            row = d.execute('INSERT INTO documents(user_id,name,extracted_text,object_key) VALUES(?,?,?,?) RETURNING id',
+                            (u['id'], name, content[:200000], key)).fetchone()
+    except Exception:
+        storage.remove_original(key)
+        raise
+    return {'id': row['id'], 'name': name, 'characters': len(content), 'message': 'Document saved.'}
+
+@app.get('/api/documents/{doc_id}/original')
+def download_document(doc_id: int, u=Depends(current_user)):
     with session() as d:
-        new_id=d.execute('INSERT INTO documents(user_id,name,extracted_text) VALUES(?,?,?) RETURNING id',(u['id'],name,content[:200000])).fetchone()['id']; return {'id':new_id,'name':name,'characters':len(content),'message':'Stored in your local database.'}
+        row = d.execute('SELECT object_key FROM documents WHERE id=? AND user_id=?', (doc_id, u['id'])).fetchone()
+    if not row or not row['object_key']:
+        raise HTTPException(404, 'Original document unavailable.')
+    return Response(storage.read_original(row['object_key']), media_type='application/octet-stream',
+                    headers={'Content-Disposition': 'attachment', 'Cache-Control': 'no-store'})
 @app.get('/api/documents')
 def documents(u=Depends(current_user)):
     with session() as d: return [dict(id=r['id'],name=r['name'],characters=len(r['extracted_text']),created_at=r['created_at']) for r in d.execute('SELECT * FROM documents WHERE user_id=? ORDER BY id DESC',(u['id'],)).fetchall()]
 @app.delete('/api/documents/{doc_id}')
 def delete_document(doc_id:int,u=Depends(current_user)):
-    with session() as d: cur=d.execute('DELETE FROM documents WHERE id=? AND user_id=?',(doc_id,u['id']))
-    if not cur.rowcount: raise HTTPException(404,'Document not found.')
+    with session() as d:
+        row = d.execute('DELETE FROM documents WHERE id=? AND user_id=? RETURNING object_key', (doc_id, u['id'])).fetchone()
+        if not row:
+            raise HTTPException(404, 'Document not found.')
+        if row['object_key']:
+            storage.remove_original(row['object_key'])
     return {'deleted':True}
 @app.get('/api/integrations')
 def integrations(u=Depends(current_user)):

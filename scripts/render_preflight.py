@@ -1,0 +1,49 @@
+"""Run as python -m scripts.render_preflight using the intended hosted settings."""
+from app.config import get_settings
+from app.db import session
+from secrets import token_bytes
+
+from app.services.storage import StorageUnavailable, read_original, remove_original, store_original
+
+
+def main():
+    settings = get_settings()
+    if settings.app_env != "production":
+        print("Preflight requires APP_ENV=production.")
+        return 1
+    issues = settings.startup_issues()
+    if issues:
+        print("\n".join(issues))
+        return 1
+    try:
+        with session() as db:
+            row = db.execute(
+                "SELECT has_database_privilege(current_user,current_database(),'CREATE') AS can_migrate"
+            ).fetchone()
+            if not row["can_migrate"]:
+                print("The database role requires CREATE for schema installation.")
+                return 1
+            # Verify the client connection, including when using a TLS pooler.
+            if not db.connection.pgconn.ssl_in_use:
+                print("The PostgreSQL client connection requires TLS.")
+                return 1
+        probe = token_bytes(32)
+        key = store_original(0, probe)
+        try:
+            if read_original(key) != probe:
+                print("Private bucket read-back failed.")
+                return 1
+        finally:
+            remove_original(key)
+    except StorageUnavailable as error:
+        print(str(error))
+        return 1
+    except Exception:
+        print("PostgreSQL preflight failed. Check the connection URL and database permissions.")
+        return 1
+    print("Production configuration, database TLS, and private bucket write/read/delete verified.")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

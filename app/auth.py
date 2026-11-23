@@ -1,12 +1,29 @@
 import base64, hashlib, hmac, json, os, time
+from pathlib import Path
+from tempfile import NamedTemporaryFile
 from fastapi import Header, HTTPException
 from app.config import get_settings
 from app.db import session
 
 def _secret():
     s=get_settings()
-    if s.app_env=='production' and not s.app_secret_key: raise RuntimeError('APP_SECRET_KEY is required in production.')
-    return (s.app_secret_key or "local-demo-only-change-this-key").encode()
+    if s.app_secret_key:
+        return s.app_secret_key.encode()
+    if s.app_env == 'production':
+        raise RuntimeError('APP_SECRET_KEY is required in production.')
+    path = Path('storage') / 'local-session.key'
+    if not path.exists():
+        path.parent.mkdir(exist_ok=True)
+        with NamedTemporaryFile(dir=path.parent, delete=False) as temp:
+            temp.write(os.urandom(32))
+        try:
+            # Publish only a fully written key, even if two workers start together.
+            os.link(temp.name, path)
+        except FileExistsError:
+            pass
+        finally:
+            os.unlink(temp.name)
+    return path.read_bytes()
 def hash_password(password: str) -> str:
     salt=os.urandom(16); key=hashlib.pbkdf2_hmac('sha256', password.encode(), salt, 240000)
     return base64.urlsafe_b64encode(salt+key).decode()

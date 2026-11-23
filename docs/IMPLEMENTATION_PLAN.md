@@ -5,7 +5,7 @@
 - [x] Reusable HTTPS Source Reader with public IP and redirect validation; randomized synthetic model test bank and blocked-live-evaluation report.
 - [x] Streamlit browser UI with all nine capability areas represented.
 - [x] Secret templates, ignored local state, Docker and hosting configuration.
-- [ ] Provider-backed LLM, live search, Google OAuth/token encryption, and hosted object storage.
+- [ ] Provider-backed LLM, live search, Google OAuth/token encryption.
 - [ ] Verification against the hosted PostgreSQL instance, public deployment and a separately hosted frontend connected to a durable backend.
 - [ ] Randomized live LLM evaluation (blocked until genuine provider credentials and free quota are available).
 
