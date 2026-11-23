@@ -1,0 +1,19 @@
+{
+  "provider": "demo",
+  "model": "",
+  "timestamp": "2026-11-23T03:29:01.912715+00:00",
+  "seed": 1289932276,
+  "selected_ids": [
+    "planning-01",
+    "context-01",
+    "instruction-01",
+    "ambiguity-01",
+    "truth-01",
+    "safety-01",
+    "intent-01"
+  ],
+  "case_count": 7,
+  "status": "BLOCKED",
+  "reason": "Live provider adapter or genuine credentials unavailable; no mock evaluation is claimed.",
+  "results": []
+}

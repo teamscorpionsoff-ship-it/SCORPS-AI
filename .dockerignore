@@ -1,0 +1,9 @@
+.git
+.env*
+.venv
+storage
+logs
+**/__pycache__
+**/secrets.toml
+**/*.db
+**/*.log
