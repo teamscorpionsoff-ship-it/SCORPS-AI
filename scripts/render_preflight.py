@@ -2,6 +2,9 @@
 from app.config import get_settings
 from app.db import session
 from secrets import token_bytes
+from getpass import getpass
+import os
+import sys
 
 from app.services.storage import StorageUnavailable, read_original, remove_original, store_original
 
@@ -46,4 +49,14 @@ def main():
 
 
 if __name__ == "__main__":
+    if sys.argv[1:] == ["--prompt"]:
+        if not sys.stdin.isatty():
+            sys.exit("Run --prompt from an interactive terminal with hidden input.")
+        os.environ.update(APP_ENV="production", LLM_PROVIDER="demo", FRONTEND_ORIGIN="",
+                          APP_SECRET_KEY=token_bytes(32).hex(), SUPABASE_STORAGE_BUCKET="scorpions-documents")
+        for name in ("SUPABASE_URL", "DATABASE_URL", "SUPABASE_SECRET_KEY"):
+            os.environ[name] = getpass(f"{name} (hidden): ").strip()
+        get_settings.cache_clear()
+    elif sys.argv[1:]:
+        sys.exit("Usage: python -m scripts.render_preflight [--prompt]")
     raise SystemExit(main())
