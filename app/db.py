@@ -45,7 +45,7 @@ def session():
             stage = "connect"
             connection = psycopg.connect(url, connect_timeout=5, row_factory=dict_row, **options)
         except psycopg.Error as error:
-            raise diagnostic(stage, error) from None
+            raise diagnostic(stage, error, url=url) from None
     else:
         raise RuntimeError("Configure a PostgreSQL DATABASE_URL for production.")
     try:

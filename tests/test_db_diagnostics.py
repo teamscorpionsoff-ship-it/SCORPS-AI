@@ -1,8 +1,41 @@
 import psycopg
 import pytest
+import socket
 
 from app.db import get_settings, session
 from app.db_errors import DatabaseSetupError, diagnostic
+
+
+@pytest.mark.parametrize("code,expected", [
+    (socket.EAI_AGAIN, "temporary failure"),
+    (socket.EAI_NONAME, "no address"),
+    (socket.EAI_FAIL, "another address lookup error"),
+])
+def test_dns_probe_redacts_resolver_and_uri(monkeypatch, code, expected):
+    def fail(*args, **kwargs):
+        raise socket.gaierror(code, "private-resolver-detail")
+    monkeypatch.setattr(socket, "getaddrinfo", fail)
+    result = str(diagnostic("connect", psycopg.OperationalError("failed to resolve host"),
+                            url="postgresql://synthetic:synthetic-secret@private.example/db"))
+    assert expected in result
+    assert all(value not in result for value in ("private.example", "synthetic", "private-resolver-detail"))
+
+
+def test_invalid_parsed_host_is_not_resolved(monkeypatch):
+    def unexpected(*args, **kwargs):
+        pytest.fail("Malformed host must not be resolved")
+    monkeypatch.setattr(socket, "getaddrinfo", unexpected)
+    result = str(diagnostic("connect", psycopg.OperationalError("failed to resolve host"),
+                            url="postgresql://user:synthetic@secret@private.example/db"))
+    assert "host is not a single valid DNS name" in result
+    assert "synthetic" not in result and "secret@" not in result
+
+
+def test_dns_recheck_can_succeed(monkeypatch):
+    monkeypatch.setattr(socket, "getaddrinfo", lambda *a, **k: [(socket.AF_INET,)])
+    result = str(diagnostic("connect", psycopg.OperationalError("failed to resolve host"),
+                            url="postgresql://user:synthetic@private.example/db"))
+    assert "resolved on diagnostic recheck" in result
 
 
 @pytest.mark.parametrize("error,expected", [
