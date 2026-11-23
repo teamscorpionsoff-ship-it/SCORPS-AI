@@ -8,6 +8,7 @@ from psycopg.conninfo import conninfo_to_dict
 from psycopg.rows import dict_row
 
 from app.config import get_settings
+from app.db_errors import diagnostic
 
 MIGRATIONS = Path(__file__).resolve().parents[1] / "migrations"
 
@@ -34,43 +35,61 @@ def session():
         connection = sqlite3.connect(path)
         connection.row_factory = sqlite3.Row
     elif url.startswith(("postgres://", "postgresql://")):
+        stage = "connection options"
         try:
             options = {}
             if settings.app_env == "production":
                 mode = conninfo_to_dict(url).get("sslmode")
                 if mode not in ("verify-ca", "verify-full"):
                     options["sslmode"] = "require"
+            stage = "connect"
             connection = psycopg.connect(url, connect_timeout=5, row_factory=dict_row, **options)
-        except psycopg.Error:
-            raise RuntimeError("PostgreSQL connection failed. Check DATABASE_URL, TLS and database availability.") from None
+        except psycopg.Error as error:
+            raise diagnostic(stage, error) from None
     else:
         raise RuntimeError("Configure a PostgreSQL DATABASE_URL for production.")
     try:
         database = Database(connection)
         if database.postgres:
-            database.execute("SET LOCAL search_path TO scorpions")
+            try:
+                database.execute("SET LOCAL search_path TO scorpions")
+            except psycopg.Error as error:
+                raise diagnostic("session setup", error) from None
         yield database
         connection.commit()
     except Exception:
-        connection.rollback()
+        try:
+            connection.rollback()
+        except psycopg.Error:
+            pass  # Preserve the original failure if the server disconnected.
         raise
     finally:
         connection.close()
 
 
 def init_db():
-    with session() as database:
-        directory = MIGRATIONS
-        if database.postgres:
-            # Serialize migrations if multiple web instances start together.
-            database.execute("SELECT pg_advisory_xact_lock(543214712)")
-            database.execute("CREATE SCHEMA IF NOT EXISTS scorpions")
-            directory = MIGRATIONS / "postgres"
-        database.execute("CREATE TABLE IF NOT EXISTS schema_migrations (version TEXT PRIMARY KEY)")
-        applied = {row["version"] for row in database.execute("SELECT version FROM schema_migrations")}
-        for migration in sorted(directory.glob("*.sql")):
-            if migration.name not in applied:
-                for statement in migration.read_text(encoding="utf-8").split(";"):
-                    if statement.strip():
-                        database.execute(statement)
-                database.execute("INSERT INTO schema_migrations (version) VALUES (?)", (migration.name,))
+    stage = "open transaction"
+    try:
+        with session() as database:
+            directory = MIGRATIONS
+            if database.postgres:
+                # Serialize migrations if multiple web instances start together.
+                stage = "migration lock"
+                database.execute("SELECT pg_advisory_xact_lock(543214712)")
+                stage = "schema setup"
+                if not database.execute("SELECT 1 FROM pg_namespace WHERE nspname='scorpions'").fetchone():
+                    database.execute("CREATE SCHEMA scorpions")
+                directory = MIGRATIONS / "postgres"
+            stage = "migration ledger"
+            database.execute("CREATE TABLE IF NOT EXISTS schema_migrations (version TEXT PRIMARY KEY)")
+            applied = {row["version"] for row in database.execute("SELECT version FROM schema_migrations")}
+            for migration in sorted(directory.glob("*.sql")):
+                if migration.name not in applied:
+                    stage = f"migration {migration.name}"
+                    for statement in migration.read_text(encoding="utf-8").split(";"):
+                        if statement.strip():
+                            database.execute(statement)
+                    database.execute("INSERT INTO schema_migrations (version) VALUES (?)", (migration.name,))
+            stage = "migration commit"
+    except psycopg.Error as error:
+        raise diagnostic(stage, error) from None

@@ -1,6 +1,8 @@
 """Run as python -m scripts.render_preflight using the intended hosted settings."""
 from app.config import get_settings
 from app.db import session
+from app.db_errors import DatabaseSetupError, diagnostic
+import psycopg
 from secrets import token_bytes
 from getpass import getpass
 import os
@@ -21,10 +23,12 @@ def main():
     try:
         with session() as db:
             row = db.execute(
-                "SELECT has_database_privilege(current_user,current_database(),'CREATE') AS can_migrate"
+                "SELECT CASE WHEN EXISTS (SELECT FROM pg_namespace WHERE nspname='scorpions') "
+                "THEN has_schema_privilege('scorpions','USAGE') AND has_schema_privilege('scorpions','CREATE') "
+                "ELSE has_database_privilege(current_user,current_database(),'CREATE') END AS can_migrate"
             ).fetchone()
             if not row["can_migrate"]:
-                print("The database role requires CREATE for schema installation.")
+                print("Schema setup requires database CREATE for a new schema, or USAGE and CREATE on the existing scorpions schema.")
                 return 1
             # Verify the client connection, including when using a TLS pooler.
             if not db.connection.pgconn.ssl_in_use:
@@ -38,8 +42,11 @@ def main():
                 return 1
         finally:
             remove_original(key)
-    except StorageUnavailable as error:
+    except (DatabaseSetupError, StorageUnavailable) as error:
         print(str(error))
+        return 1
+    except psycopg.Error as error:
+        print(diagnostic("preflight", error))
         return 1
     except Exception:
         print("PostgreSQL preflight failed. Check the connection URL and database permissions.")
