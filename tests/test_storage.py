@@ -10,6 +10,22 @@ from app.db import init_db
 from app.services import storage
 
 
+@pytest.mark.parametrize('message,expected', [
+    ('Bucket not found', 'bucket not found or not visible'),
+    ('Invalid API key', 'API key or token rejected'),
+    ('jwt must be provided', 'authorization missing or access denied'),
+    ('other', 'unclassified storage error'),
+])
+def test_storage_failure_redacts_provider_detail(monkeypatch, message, expected):
+    response = Mock(status_code=400)
+    response.json.return_value = {'message': message + ' synthetic-secret'}
+    monkeypatch.setattr(storage.requests, 'request', Mock(return_value=response))
+    with pytest.raises(storage.StorageUnavailable) as error:
+        storage._request('GET', 'bucket/test')
+    assert expected in str(error.value)
+    assert 'synthetic-secret' not in str(error.value)
+
+
 def test_original_lifecycle_and_ownership(tmp_path, monkeypatch):
     monkeypatch.setattr(main.settings, 'app_env', 'development')
     monkeypatch.setattr(main.settings, 'database_url', f'sqlite:///{tmp_path}/data.db')

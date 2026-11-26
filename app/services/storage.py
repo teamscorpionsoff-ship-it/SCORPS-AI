@@ -22,7 +22,20 @@ def _request(method, path, **kwargs):
     except requests.RequestException:
         raise StorageUnavailable("Private document storage is unreachable.") from None
     if not 200 <= response.status_code < 300:
-        raise StorageUnavailable(f"Private document storage returned HTTP {response.status_code}.")
+        # Interpret internally; never echo arbitrary provider response bodies.
+        reason = "unclassified storage error"
+        try:
+            payload = response.json()
+            detail = ' '.join(str(payload.get(k, '')) for k in ('code', 'error', 'message')).lower() if isinstance(payload, dict) else ''
+            if any(term in detail for term in ('bucket not found', 'nosuchbucket', 'bucketnotfound')):
+                reason = "bucket not found or not visible to this credential"
+            elif any(term in detail for term in ('invalid api key', 'invalidapikey', 'invalid jwt', 'invalidjwt', 'jwt expired')):
+                reason = "API key or token rejected"
+            elif any(term in detail for term in ('authorization', 'unauthorized', 'accessdenied', 'permission', 'jwt must be provided')):
+                reason = "authorization missing or access denied"
+        except (ValueError, TypeError):
+            pass
+        raise StorageUnavailable(f"Private document storage returned HTTP {response.status_code}: {reason}.")
     return response
 
 
