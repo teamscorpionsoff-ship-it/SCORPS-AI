@@ -1,5 +1,6 @@
 import os, requests, streamlit as st
 from html import escape
+from urllib.parse import urlsplit
 
 st.set_page_config(page_title='Scorpions AI',page_icon='🦂',layout='wide')
 API=os.getenv('API_BASE_URL','')
@@ -9,6 +10,10 @@ if not API:
     except FileNotFoundError:
         API=''
 API=(API or 'http://127.0.0.1:8000').rstrip('/')
+api_origin=urlsplit(API)
+if api_origin.username or api_origin.password or api_origin.query or api_origin.fragment or api_origin.path:
+    st.error('API_BASE_URL must contain only the backend origin, with no credentials, path or query.')
+    st.stop()
 st.markdown('''<style>
 .stApp{background:#0b1020;color:#f2f4fb}.block-container{max-width:1120px;padding-top:2rem}
 [data-testid="stSidebar"]{background:#11182b}.hero{padding:28px;border:1px solid #27324a;border-radius:18px;background:linear-gradient(125deg,#192444,#11182b)}
@@ -22,10 +27,17 @@ def api(path,method='get',**kw):
             r=getattr(requests,method)(API+path,headers=headers,timeout=(10,90),**kw)
         if r.status_code>=400: st.error(r.json().get('detail','Request failed')); return None
         return r.json()
-    except requests.RequestException: st.error('The backend is temporarily unavailable. Please retry shortly; the free service may be waking up.'); return None
+    except requests.Timeout: st.error('The backend request timed out. Retry after the Render service finishes waking up.'); return None
+    except requests.ConnectionError:
+        if api_origin.hostname in ('localhost','127.0.0.1'):
+            st.error('The frontend is configured for a local backend. In Manage app → Settings → Secrets, set API_BASE_URL to the public Render origin, then reboot this app.')
+        else: st.error('The frontend could not connect to the configured backend. Check API_BASE_URL in Streamlit app settings.')
+        return None
+    except requests.RequestException: st.error('The backend request failed. Verify the API origin in Streamlit app settings.'); return None
     except ValueError: st.error('The backend returned an unexpected response. Please retry shortly.'); return None
 
 st.sidebar.markdown('## 🦂 Scorpions AI')
+st.sidebar.caption('Backend: '+(api_origin.hostname or 'invalid origin'))
 if 'token' not in st.session_state:
     mode=st.sidebar.radio('Account',['Sign in','Create account'])
     with st.form('auth'):
