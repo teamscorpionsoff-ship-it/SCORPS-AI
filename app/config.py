@@ -30,7 +30,7 @@ class Settings(BaseSettings):
     max_upload_size_mb: int = 20
     max_agent_steps: int = 6
     log_level: str = "INFO"
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore", case_sensitive=False)
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore", case_sensitive=False, env_ignore_empty=True)
 
     def startup_issues(self) -> list[str]:
         issues=[]

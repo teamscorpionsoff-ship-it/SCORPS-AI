@@ -8,6 +8,18 @@ from app.services.ai_usage import reserve
 from app.services import llm
 
 
+def test_empty_optional_env_placeholders_keep_safe_defaults(tmp_path,monkeypatch):
+    from app.config import Settings
+    for key in ('GROQ_FREE_TIER_CONFIRMED','AI_USER_HOURLY_LIMIT','AI_GLOBAL_DAILY_LIMIT'):
+        monkeypatch.delenv(key,raising=False)
+    env=tmp_path/'example.env'
+    env.write_text('GROQ_FREE_TIER_CONFIRMED=\nAI_USER_HOURLY_LIMIT=\nAI_GLOBAL_DAILY_LIMIT=\n')
+    settings=Settings(_env_file=env)
+    assert settings.groq_free_tier_confirmed is False
+    assert settings.ai_user_hourly_limit==20
+    assert settings.ai_global_daily_limit==200
+
+
 @pytest.fixture
 def database(tmp_path,monkeypatch):
     s=get_settings()
