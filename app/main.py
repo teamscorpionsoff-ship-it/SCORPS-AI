@@ -138,11 +138,20 @@ def get_plan(u=Depends(current_user)):
     with session() as d: ts=[dict(r) for r in d.execute('SELECT * FROM tasks WHERE user_id=?',(u['id'],)).fetchall()]
     return {'items':plan(ts),'note':'Tentative local plan; Google Calendar is disconnected.'}
 
+
+@app.get('/api/chat/history')
+def chat_history(u=Depends(current_user)):
+    with session() as d:
+        rows=d.execute('SELECT role,content,created_at FROM messages WHERE user_id=? ORDER BY id DESC LIMIT 100',(u['id'],)).fetchall()
+    return [dict(row) for row in reversed(rows)]
+
 @app.post('/api/chat')
 def chat(body:ChatIn,u=Depends(current_user)):
     text=body.message; low=text.lower()
     if settings.llm_provider=='groq':
         from app.services.llm import complete, SYSTEM, ModelUnavailable
+        from app.services.ai_usage import reserve
+        reserve(u['id'])
         # Only this user's recent chat is sent. Memories/documents/credentials
         # are never injected, and generated text cannot invoke app mutations.
         with session() as d:

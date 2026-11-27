@@ -60,7 +60,8 @@ if st.sidebar.button('Sign out'): st.session_state.clear(); st.rerun()
 if page=='Overview':
     st.markdown(f'<div class="hero"><h1>Good to see you, {escape(user.get("name","there"))}.</h1><p class="muted">Your personal workspace, organized in one place.</p></div>',unsafe_allow_html=True)
     tasks=api('/api/tasks') or []; pending=[t for t in tasks if t['status']!='completed']
-    a,b,c=st.columns(3); a.metric('Active tasks',len(pending)); b.metric('Completed',len(tasks)-len(pending)); c.metric('AI mode','Demo')
+    status=api('/api/config/status') or {}
+    a,b,c=st.columns(3); a.metric('Active tasks',len(pending)); b.metric('Completed',len(tasks)-len(pending)); c.metric('AI mode','Live Groq' if status.get('provider')=='groq' else 'Demo')
     st.subheader('Your tasks')
     if tasks: st.dataframe(tasks,use_container_width=True,hide_index=True)
     else: st.info('Nothing on your list yet. Add a task or ask your assistant.')
@@ -72,13 +73,23 @@ elif page=='Assistant':
     status=api('/api/config/status') or {}
     live=status.get('provider')=='groq'
     st.caption('Live Groq chat. Messages are sent to Groq; no email, calendar or task actions are executed from chat.' if live else 'AI demo uses deterministic actions. Live AI is not enabled in this deployment.')
-    if 'chat' not in st.session_state: st.session_state.chat=[]
+    if 'chat' not in st.session_state:
+        history=api('/api/chat/history')
+        if history is None:
+            st.info('Chat history could not be loaded. Retry before sending another message.')
+            st.stop()
+        st.session_state.chat=history
     for msg in st.session_state.chat: st.chat_message(msg['role']).write(msg['content'])
     prompt=st.chat_input('What would you like help with?')
     if prompt:
-        st.session_state.chat.append({'role':'user','content':prompt})
-        result=api('/api/chat','post',json={'message':prompt}); reply=(result or {}).get('reply','Something went wrong.')
-        st.session_state.chat.append({'role':'assistant','content':reply}); st.rerun()
+        result=api('/api/chat','post',json={'message':prompt})
+        if result:
+            st.session_state.chat.append({'role':'user','content':prompt})
+            st.session_state.chat.append({'role':'assistant','content':result['reply']})
+            st.rerun()
+        else:
+            st.warning('No completed response was added. Your message is below so you can copy it and retry.')
+            st.code(prompt,language=None)
 elif page=='Tasks':
     st.title('Tasks');
     with st.form('new_task',clear_on_submit=True):

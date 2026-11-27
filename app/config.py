@@ -13,6 +13,8 @@ class Settings(BaseSettings):
     groq_api_key: str = ""
     groq_model_id: str = ""
     groq_free_tier_confirmed: bool = False
+    ai_user_hourly_limit: int = 20
+    ai_global_daily_limit: int = 200
     gemini_api_key: str = ""
     gemini_model_id: str = ""
     web_search_provider: str = ""
