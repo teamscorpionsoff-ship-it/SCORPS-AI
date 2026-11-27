@@ -68,7 +68,10 @@ if page=='Overview':
         result=api('/api/plan')
         if result: st.dataframe(result['items'],use_container_width=True,hide_index=True)
 elif page=='Assistant':
-    st.title('Assistant'); st.caption('AI demo uses deterministic actions. Live AI is not enabled in this deployment.')
+    st.title('Assistant')
+    status=api('/api/config/status') or {}
+    live=status.get('provider')=='groq'
+    st.caption('Live Groq chat. Messages are sent to Groq; no email, calendar or task actions are executed from chat.' if live else 'AI demo uses deterministic actions. Live AI is not enabled in this deployment.')
     if 'chat' not in st.session_state: st.session_state.chat=[]
     for msg in st.session_state.chat: st.chat_message(msg['role']).write(msg['content'])
     prompt=st.chat_input('What would you like help with?')

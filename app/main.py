@@ -141,6 +141,23 @@ def get_plan(u=Depends(current_user)):
 @app.post('/api/chat')
 def chat(body:ChatIn,u=Depends(current_user)):
     text=body.message; low=text.lower()
+    if settings.llm_provider=='groq':
+        from app.services.llm import complete, SYSTEM, ModelUnavailable
+        # Only this user's recent chat is sent. Memories/documents/credentials
+        # are never injected, and generated text cannot invoke app mutations.
+        with session() as d:
+            recent=d.execute('SELECT role,content FROM messages WHERE user_id=? ORDER BY id DESC LIMIT 6',(u['id'],)).fetchall()
+        history=[{'role':r['role'],'content':r['content'][:3000]} for r in reversed(recent)]
+        try:
+            answer=complete([{'role':'system','content':SYSTEM}]+history+[{'role':'user','content':text}])
+        except ModelUnavailable as error:
+            raise HTTPException(503,str(error)) from None
+        with session() as d:
+            for role,content in [('user',text),('assistant',answer)]:
+                d.execute('INSERT INTO messages(user_id,role,content) VALUES(?,?,?)',(u['id'],role,content))
+        return {'reply':answer,'mode':'groq','model':settings.groq_model_id}
+    if settings.llm_provider!='demo':
+        raise HTTPException(503,'The selected AI provider is not supported by this build.')
     with session() as d:
         d.execute('INSERT INTO messages(user_id,role,content) VALUES(?,?,?)',(u['id'],'user',text))
         tasks=[dict(r) for r in d.execute('SELECT * FROM tasks WHERE user_id=? AND status!=? ORDER BY due_date LIMIT 8',(u['id'],'completed')).fetchall()]

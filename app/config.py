@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     llm_provider: str = "demo"
     groq_api_key: str = ""
     groq_model_id: str = ""
+    groq_free_tier_confirmed: bool = False
     gemini_api_key: str = ""
     gemini_model_id: str = ""
     web_search_provider: str = ""
@@ -49,6 +50,8 @@ class Settings(BaseSettings):
             issues.append("APP_SECRET_KEY must be set to a random value of at least 32 characters in production.")
         if self.llm_provider == "groq" and not (self.groq_api_key and self.groq_model_id):
             issues.append("Groq is selected but GROQ_API_KEY or GROQ_MODEL_ID is missing. Create a key in the Groq console and set both in the hosting secrets or local .env.")
+        if self.llm_provider == 'groq' and not self.groq_free_tier_confirmed:
+            issues.append('Confirm Groq Free plan with no usage-based billing before setting GROQ_FREE_TIER_CONFIRMED=true.')
         if self.llm_provider == "gemini" and not (self.gemini_api_key and self.gemini_model_id):
             issues.append("Gemini is selected but GEMINI_API_KEY or GEMINI_MODEL_ID is missing. Obtain a no-billing key from Google AI Studio and set both in secrets or .env.")
         return issues
