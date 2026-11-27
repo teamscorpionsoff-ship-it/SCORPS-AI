@@ -2,7 +2,7 @@ import os, requests, streamlit as st
 from html import escape
 from urllib.parse import urlsplit
 
-st.set_page_config(page_title='Scorpions AI',page_icon='ðŸ¦‚',layout='wide')
+st.set_page_config(page_title='Scorpions AI',page_icon='🦂',layout='wide')
 API=os.getenv('API_BASE_URL','')
 if not API:
     try:
@@ -24,20 +24,20 @@ def api(path,method='get',**kw):
     headers=kw.pop('headers',{}); token=st.session_state.get('token')
     if token: headers['Authorization']='Bearer '+token
     try:
-        with st.spinner('Connecting to your workspace. The free backend may take a minute to wake upâ€¦'):
+        with st.spinner('Connecting to your workspace. The free backend may take a minute to wake up…'):
             r=getattr(requests,method)(API+path,headers=headers,timeout=(10,90),**kw)
         if r.status_code>=400: st.error(r.json().get('detail','Request failed')); return None
         return r.content if raw else r.json()
     except requests.Timeout: st.error('The backend request timed out. Retry after the Render service finishes waking up.'); return None
     except requests.ConnectionError:
         if api_origin.hostname in ('localhost','127.0.0.1'):
-            st.error('The frontend is configured for a local backend. In Manage app â†’ Settings â†’ Secrets, set API_BASE_URL to the public Render origin, then reboot this app.')
+            st.error('The frontend is configured for a local backend. In Manage app → Settings → Secrets, set API_BASE_URL to the public Render origin, then reboot this app.')
         else: st.error('The frontend could not connect to the configured backend. Check API_BASE_URL in Streamlit app settings.')
         return None
     except requests.RequestException: st.error('The backend request failed. Verify the API origin in Streamlit app settings.'); return None
     except ValueError: st.error('The backend returned an unexpected response. Please retry shortly.'); return None
 
-st.sidebar.markdown('## ðŸ¦‚ Scorpions AI')
+st.sidebar.markdown('## 🦂 Scorpions AI')
 st.sidebar.caption('Backend: '+(api_origin.hostname or 'invalid origin'))
 if 'token' not in st.session_state:
     mode=st.sidebar.radio('Account',['Sign in','Create account'])
@@ -49,7 +49,7 @@ if 'token' not in st.session_state:
         if mode=='Create account': payload['name']=name
         result=api('/api/auth/'+('login' if mode=='Sign in' else 'register'),'post',json=payload)
         if result: st.session_state.token=result['token']; st.session_state.user=result['user']; st.rerun()
-    st.markdown('<div class="hero"><h1>Personal staff for everyone.</h1><p class="muted">One intelligent assistant for tasks, plans, research and everyday work.</p><b>AI demo available Â· Workspace data is stored by your configured backend.</b></div>',unsafe_allow_html=True)
+    st.markdown('<div class="hero"><h1>Personal staff for everyone.</h1><p class="muted">One intelligent assistant for tasks, plans, research and everyday work.</p><b>AI demo available · Workspace data is stored by your configured backend.</b></div>',unsafe_allow_html=True)
     st.stop()
 
 user=st.session_state.get('user') or api('/api/me') or {'name':'there'}
@@ -85,7 +85,7 @@ elif page=='Tasks':
         if api('/api/tasks','post',json={'title':title,'due_date':due or None,'priority':priority,'duration':int(duration) or None,'description':desc}): st.rerun()
     items=api('/api/tasks') or []
     for t in items:
-        cols=st.columns([5,1,1]); cols[0].write(f"**{t['title']}** Â· {t['priority']} Â· {t['status']} Â· {t.get('due_date') or 'No due date'}")
+        cols=st.columns([5,1,1]); cols[0].write(f"**{t['title']}** · {t['priority']} · {t['status']} · {t.get('due_date') or 'No due date'}")
         if t['status']!='completed' and cols[1].button('Complete',key=f"done{t['id']}"):
             t.update(status='completed'); api(f"/api/tasks/{t['id']}",'put',json={k:t.get(k) for k in ('title','description','priority','status','due_date','duration','category')}); st.rerun()
         if cols[2].button('Delete',key=f"del{t['id']}"): api(f"/api/tasks/{t['id']}",'delete'); st.rerun()
