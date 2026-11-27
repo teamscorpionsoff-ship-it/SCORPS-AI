@@ -10,6 +10,19 @@ from app.db import init_db
 from app.services import storage
 
 
+@pytest.mark.parametrize('key,bearer', [('eyJsynthetic.payload.signature', True), ('sb_secret_synthetic', False)])
+def test_key_type_authentication_headers(monkeypatch, key, bearer):
+    monkeypatch.setattr(main.settings, 'supabase_secret_key', key)
+    request = Mock(return_value=Mock(status_code=200))
+    monkeypatch.setattr(storage.requests, 'request', request)
+    storage._request('GET', 'bucket/test')
+    headers = request.call_args.kwargs['headers']
+    assert headers['apikey'] == key
+    assert ('Authorization' in headers) is bearer
+    if bearer:
+        assert headers['Authorization'] == 'Bearer ' + key
+
+
 @pytest.mark.parametrize('message,expected', [
     ('Bucket not found', 'bucket not found or not visible'),
     ('Invalid API key', 'API key or token rejected'),

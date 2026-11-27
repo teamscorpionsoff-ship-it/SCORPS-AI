@@ -13,10 +13,15 @@ class StorageUnavailable(RuntimeError):
 
 def _request(method, path, **kwargs):
     config = get_settings()
+    headers = {"apikey": config.supabase_secret_key, "Content-Type": "application/octet-stream"}
+    # Legacy service_role keys are JWTs: Storage needs the bearer header.
+    # Modern sb_secret keys are opaque and authenticate through apikey only.
+    if config.supabase_secret_key.startswith("eyJ") and config.supabase_secret_key.count(".") == 2:
+        headers["Authorization"] = "Bearer " + config.supabase_secret_key
     try:
         response = requests.request(
             method, f"{config.supabase_url}/storage/v1/{path}",
-            headers={"apikey": config.supabase_secret_key, "Content-Type": "application/octet-stream"},
+            headers=headers,
             allow_redirects=False, timeout=(4, 30), **kwargs,
         )
     except requests.RequestException:
