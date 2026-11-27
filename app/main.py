@@ -1,10 +1,10 @@
 from datetime import datetime, timedelta, timezone
 import json, logging, os, re
-from typing import Optional
+from typing import Optional, Literal
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Depends, HTTPException, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from app.config import get_settings
 from app.db import init_db, session
 from app.auth import current_user, hash_password, verify_password, issue_token
@@ -39,7 +39,23 @@ def startup():
 
 class Register(BaseModel): email: str; name: str=Field(min_length=1,max_length=100); password: str=Field(min_length=10,max_length=200)
 class Login(BaseModel): email: str; password: str
-class TaskIn(BaseModel): title: str=Field(min_length=1,max_length=250); description: str=''; priority: str='medium'; status: str='pending'; due_date: Optional[str]=None; duration: Optional[int]=None; category: str='personal'
+class TaskIn(BaseModel):
+    title: str=Field(min_length=1,max_length=250)
+    description: str=''
+    priority: Literal['low','medium','high','urgent']='medium'
+    status: Literal['pending','in_progress','completed','cancelled','blocked']='pending'
+    due_date: Optional[str]=None
+    duration: Optional[int]=Field(default=None,gt=0)
+    category: str='personal'
+
+    @field_validator('due_date')
+    @classmethod
+    def valid_date(cls, value):
+        if value is not None:
+            from datetime import date
+            if date.fromisoformat(value).isoformat()!=value:
+                raise ValueError('Use YYYY-MM-DD for due dates.')
+        return value
 class MemoryIn(BaseModel): content: str=Field(min_length=1,max_length=3000); kind: str='note'
 class ChatIn(BaseModel): message: str=Field(min_length=1,max_length=5000)
 class SourceIn(BaseModel): urls: list[str]=Field(min_length=1,max_length=10)
@@ -105,11 +121,15 @@ def delete_memory(memory_id:int,u=Depends(current_user)):
 
 def plan(tasks, start=None, hours=8):
     """Simple deterministic earliest-deadline priority plan; no calendar writes."""
-    now=start or datetime.now(timezone.utc); cursor=now.replace(minute=0,second=0,microsecond=0)
+    now=start or datetime.now(timezone.utc); cursor=now
+    deadline=now+timedelta(hours=hours)
     out=[]
     for t in sorted((x for x in tasks if x['status'] not in ('completed','cancelled')),key=lambda x:(x.get('due_date') or '9999', {'urgent':0,'high':1,'medium':2,'low':3}.get(x.get('priority'),2))):
         mins=t.get('duration') or 60
         if mins>hours*60: out.append({'task':t['title'],'status':'needs_duration_or_split'}); continue
+        if cursor+timedelta(minutes=mins)>deadline:
+            out.append({'task':t['title'],'status':'outside_planning_window'})
+            continue
         out.append({'task':t['title'],'start':cursor.isoformat(),'end':(cursor+timedelta(minutes=mins)).isoformat(),'tentative':not bool(t.get('duration'))})
         cursor+=timedelta(minutes=mins+10)
     return out
