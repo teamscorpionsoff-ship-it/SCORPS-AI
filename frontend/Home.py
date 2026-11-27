@@ -2,7 +2,13 @@ import os, requests, streamlit as st
 from html import escape
 
 st.set_page_config(page_title='Scorpions AI',page_icon='🦂',layout='wide')
-API=os.getenv('API_BASE_URL','http://127.0.0.1:8000').rstrip('/')
+API=os.getenv('API_BASE_URL','')
+if not API:
+    try:
+        API=st.secrets.get('API_BASE_URL','')
+    except FileNotFoundError:
+        API=''
+API=(API or 'http://127.0.0.1:8000').rstrip('/')
 st.markdown('''<style>
 .stApp{background:#0b1020;color:#f2f4fb}.block-container{max-width:1120px;padding-top:2rem}
 [data-testid="stSidebar"]{background:#11182b}.hero{padding:28px;border:1px solid #27324a;border-radius:18px;background:linear-gradient(125deg,#192444,#11182b)}
@@ -12,7 +18,8 @@ def api(path,method='get',**kw):
     headers=kw.pop('headers',{}); token=st.session_state.get('token')
     if token: headers['Authorization']='Bearer '+token
     try:
-        r=getattr(requests,method)(API+path,headers=headers,timeout=15,**kw)
+        with st.spinner('Connecting to your workspace. The free backend may take a minute to wake up…'):
+            r=getattr(requests,method)(API+path,headers=headers,timeout=(10,90),**kw)
         if r.status_code>=400: st.error(r.json().get('detail','Request failed')); return None
         return r.json()
     except requests.RequestException: st.error('The backend is temporarily unavailable. Please retry shortly; the free service may be waking up.'); return None
