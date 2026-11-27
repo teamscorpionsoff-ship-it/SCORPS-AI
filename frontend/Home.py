@@ -1,4 +1,5 @@
 import os, requests, streamlit as st
+from html import escape
 
 st.set_page_config(page_title='Scorpions AI',page_icon='🦂',layout='wide')
 API=os.getenv('API_BASE_URL','http://127.0.0.1:8000').rstrip('/')
@@ -14,7 +15,8 @@ def api(path,method='get',**kw):
         r=getattr(requests,method)(API+path,headers=headers,timeout=15,**kw)
         if r.status_code>=400: st.error(r.json().get('detail','Request failed')); return None
         return r.json()
-    except requests.RequestException: st.error(f'Cannot reach the API at {API}. Start the app with run.bat or run.sh.'); return None
+    except requests.RequestException: st.error('The backend is temporarily unavailable. Please retry shortly; the free service may be waking up.'); return None
+    except ValueError: st.error('The backend returned an unexpected response. Please retry shortly.'); return None
 
 st.sidebar.markdown('## 🦂 Scorpions AI')
 if 'token' not in st.session_state:
@@ -27,7 +29,7 @@ if 'token' not in st.session_state:
         if mode=='Create account': payload['name']=name
         result=api('/api/auth/'+('login' if mode=='Sign in' else 'register'),'post',json=payload)
         if result: st.session_state.token=result['token']; st.session_state.user=result['user']; st.rerun()
-    st.markdown('<div class="hero"><h1>Personal staff for everyone.</h1><p class="muted">One intelligent assistant for tasks, plans, research and everyday work.</p><b>Local demo mode · Your data stays in your local database.</b></div>',unsafe_allow_html=True)
+    st.markdown('<div class="hero"><h1>Personal staff for everyone.</h1><p class="muted">One intelligent assistant for tasks, plans, research and everyday work.</p><b>AI demo available · Workspace data is stored by your configured backend.</b></div>',unsafe_allow_html=True)
     st.stop()
 
 user=st.session_state.get('user') or api('/api/me') or {'name':'there'}
@@ -36,11 +38,13 @@ st.sidebar.caption('Signed in as '+user.get('name','user'))
 if st.sidebar.button('Sign out'): st.session_state.clear(); st.rerun()
 
 if page=='Overview':
-    st.markdown(f'<div class="hero"><h1>Good to see you, {user.get("name","there")}.</h1><p class="muted">Your personal workspace, organized in one place.</p></div>',unsafe_allow_html=True)
+    st.markdown(f'<div class="hero"><h1>Good to see you, {escape(user.get("name","there"))}.</h1><p class="muted">Your personal workspace, organized in one place.</p></div>',unsafe_allow_html=True)
     tasks=api('/api/tasks') or []; pending=[t for t in tasks if t['status']!='completed']
     a,b,c=st.columns(3); a.metric('Active tasks',len(pending)); b.metric('Completed',len(tasks)-len(pending)); c.metric('Mode','Local demo')
     st.subheader('Your tasks'); st.dataframe(tasks,use_container_width=True,hide_index=True) if tasks else st.info('Nothing on your list yet. Add a task or ask your assistant.')
-    if st.button('Plan my tasks'): st.session_state.page='Planner'; st.rerun()
+    if st.button('Plan my tasks'):
+        result=api('/api/plan')
+        if result: st.dataframe(result['items'],use_container_width=True,hide_index=True)
 elif page=='Assistant':
     st.title('Assistant'); st.caption('Demo mode uses deterministic local actions. Live model calls require credentials in your local .env.')
     if 'chat' not in st.session_state: st.session_state.chat=[]
@@ -87,7 +91,7 @@ elif page=='Research':
                 if source.get('error'): st.error(source['error'])
                 st.write(source.get('text') or 'No readable text extracted.')
 elif page=='Documents':
-    st.title('Documents'); st.caption('Files are extracted and stored in your local database. Do not upload sensitive documents in demo mode.')
+    st.title('Documents'); st.caption('Documents are stored privately by your configured backend. Upload only files you choose to share with this application.')
     f=st.file_uploader('Upload PDF, DOCX, TXT, MD or CSV',type=['pdf','docx','txt','md','csv'])
     if f and st.button('Upload document'): api('/api/documents','post',files={'file':(f.name,f.getvalue(),f.type)}); st.rerun()
     st.dataframe(api('/api/documents') or [],use_container_width=True,hide_index=True)
