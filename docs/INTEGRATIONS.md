@@ -27,3 +27,7 @@ Run python -m scripts.evaluate_hosted_llm for a randomized 5–20-case evaluatio
 GET /api/chat/history requires authentication and returns only the current user’s last 100 messages in chronological order. Signing back in reloads history; this does not provide browser-persistent login. Only successful live exchanges are recorded as completed messages. Failed prompts remain visible for manual retry.
 
 Live model attempts reserve quota transactionally before provider calls: AI_USER_HOURLY_LIMIT defaults to 20 per rolling hour and AI_GLOBAL_DAILY_LIMIT to 200 across all users per rolling 24 hours. The database ledger survives redeploys; failures consume allowance, denied reservations roll back, and no paid fallback is used. Limits are application safeguards and do not guarantee Groq quota availability. Provider quotas can be lower or shared with other clients.
+
+
+## Wikipedia research
+Set WEB_SEARCH_PROVIDER=wikipedia to enable authenticated POST /api/research/search. No WEB_SEARCH_API_KEY is required for this mode. Queries (2–300 characters) are sent to the fixed English Wikipedia Action API endpoint, with a project-identifying User-Agent, bounded timeouts, no redirects and at most five results. The UI displays plain-text excerpts and links constructed only from validated numeric page IDs, plus retrieval timestamps. No LLM calls or fabricated citations are used. This is encyclopedia search, not general web/news search, and it is separate from Assistant chat. Public HTTPS page reading remains available under Research.

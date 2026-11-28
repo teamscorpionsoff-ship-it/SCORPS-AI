@@ -59,6 +59,15 @@ class TaskIn(BaseModel):
 class MemoryIn(BaseModel): content: str=Field(min_length=1,max_length=3000); kind: str='note'
 class ChatIn(BaseModel): message: str=Field(min_length=1,max_length=5000)
 class SourceIn(BaseModel): urls: list[str]=Field(min_length=1,max_length=10)
+class ResearchIn(BaseModel):
+    query: str=Field(min_length=2,max_length=300)
+
+    @field_validator('query')
+    @classmethod
+    def valid_query(cls,value):
+        value=value.strip()
+        if len(value)<2: raise ValueError('Enter at least two characters to search.')
+        return value
 class DraftIn(BaseModel): recipient: str=''; subject: str=Field(max_length=500); body: str=Field(max_length=20000)
 
 @app.get('/health')
@@ -70,7 +79,7 @@ def health():
         raise HTTPException(503, 'Database unavailable.') from None
     return {'status':'ok','mode':settings.app_env,'provider':settings.llm_provider,'provider_configured':not settings.startup_issues()}
 @app.get('/api/config/status')
-def config_status(): return {'mode':settings.app_env,'provider':settings.llm_provider,'issues':settings.startup_issues(),'google_connected':False,'search_connected':bool(settings.web_search_provider and settings.web_search_api_key)}
+def config_status(): return {'mode':settings.app_env,'provider':settings.llm_provider,'issues':settings.startup_issues(),'google_connected':False,'search_connected':settings.web_search_provider=='wikipedia','search_provider':settings.web_search_provider}
 @app.post('/api/auth/register')
 def register(body:Register):
     with session() as d:
@@ -241,7 +250,16 @@ def delete_document(doc_id:int,u=Depends(current_user)):
     return {'deleted':True}
 @app.get('/api/integrations')
 def integrations(u=Depends(current_user)):
-    return {'google':{'connected':False,'message':'Google OAuth setup is not enabled in this build.'},'research':{'connected':bool(settings.web_search_provider and settings.web_search_api_key)},'llm':{'provider':settings.llm_provider,'configured':not settings.startup_issues()}}
+    return {'google':{'connected':False,'message':'Google OAuth setup is not enabled in this build.'},'research':{'connected':settings.web_search_provider=='wikipedia','provider':settings.web_search_provider},'llm':{'provider':settings.llm_provider,'configured':not settings.startup_issues()}}
+
+
+@app.post('/api/research/search')
+def research_search(body:ResearchIn,u=Depends(current_user)):
+    if settings.web_search_provider!='wikipedia':
+        raise HTTPException(503,'Encyclopedia search is disconnected.')
+    from app.services.research import search_wikipedia, ResearchUnavailable
+    try: return search_wikipedia(body.query.strip())
+    except ResearchUnavailable as error: raise HTTPException(503,str(error)) from None
 @app.post('/api/research/read')
 def research_read(body:SourceIn,u=Depends(current_user)):
     from app.services.source_reader import read_sources

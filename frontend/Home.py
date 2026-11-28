@@ -119,8 +119,27 @@ elif page=='Memory':
         a,b=st.columns([8,1]); a.write(m['content'])
         if b.button('Delete',key='mem'+str(m['id'])): api('/api/memories/'+str(m['id']),'delete'); st.rerun()
 elif page=='Research':
-    st.title('Research'); topic=st.text_input('Research question')
-    st.info('Live web search is disconnected until a verified no-cost search provider is configured. No sources or citations are fabricated.')
+    st.title('Research')
+    status=api('/api/config/status') or {}
+    st.caption('Wikipedia encyclopedia search. Your query is sent to Wikipedia. This is not general web or breaking-news search; no AI-generated citations are used.')
+    with st.form('research_search'):
+        topic=st.text_input('Search Wikipedia',max_chars=300)
+        search=st.form_submit_button('Search sources',disabled=not status.get('search_connected'))
+    if not status.get('search_connected'): st.info('Encyclopedia search is disconnected.')
+    if search:
+        st.session_state.pop('research_results',None)
+        result=api('/api/research/search','post',json={'query':topic})
+        if result:
+            st.session_state.research_results=result
+    if st.session_state.get('research_results'):
+        result=st.session_state.research_results
+        st.caption('Results for: '+result['query'])
+        if not result['sources']: st.info('No matching encyclopedia articles. Try different search terms.')
+        for source in result['sources']:
+            st.subheader(source['title'])
+            st.write(source['snippet'])
+            st.link_button('Open Wikipedia source',source['url'])
+        st.caption('Retrieved: '+result['retrieved_at'])
     st.subheader('Read public source pages (HTTPS only)'); url=st.text_input('Source URL');
     if st.button('Read source',disabled=not url):
         sources=api('/api/research/read','post',json={'urls':[url]})
