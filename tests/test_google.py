@@ -122,7 +122,8 @@ def test_callback_cookie_and_no_tokens_in_response(configured):
     from app.main import app
     start=google.start(1,'gmail')
     with TestClient(app) as client:
-        first=client.get(start['url'].replace('http://127.0.0.1:8000',''),follow_redirects=False)
+        ticket=parse_qs(urlsplit(start['url']).query)['ticket'][0]
+        first=client.post('/api/integrations/google/begin',data={'ticket':ticket},follow_redirects=False)
         assert first.status_code==303
         assert 'HttpOnly' in first.headers['set-cookie'] and 'SameSite=lax' in first.headers['set-cookie']
         state=parse_qs(urlsplit(first.headers['location']).query)['state'][0]
@@ -130,6 +131,30 @@ def test_callback_cookie_and_no_tokens_in_response(configured):
         assert done.status_code==200
         assert done.headers['cache-control']=='no-store'
         assert 'synthetic-access' not in done.text and 'synthetic-refresh' not in done.text
+
+
+def test_link_previews_do_not_consume_browser_binding(configured):
+    from fastapi.testclient import TestClient
+    from app.main import app
+    start=google.start(1,'calendar')
+    ticket=parse_qs(urlsplit(start['url']).query)['ticket'][0]
+    path=start['url'].replace('http://127.0.0.1:8000','')
+    with TestClient(app) as client:
+        for _ in range(2):
+            landing=client.get(path,follow_redirects=False)
+            assert landing.status_code==200
+            assert 'Continue to Google' in landing.text
+            assert 'set-cookie' not in landing.headers
+            assert landing.headers['cache-control']=='no-store'
+            assert "form-action 'self'" in landing.headers['content-security-policy']
+        with session() as db:
+            row=db.execute('SELECT * FROM google_oauth_flows WHERE state_hash=?',(start['request_id'],)).fetchone()
+            assert row['browser_hash'] is None and row['used']==0
+        bound=client.post('/api/integrations/google/begin',data={'ticket':ticket},follow_redirects=False)
+        assert bound.status_code==303
+        assert parse_qs(urlsplit(bound.headers['location']).query)['scope']==[google.SCOPES['calendar']]
+        assert client.post('/api/integrations/google/begin',data={'ticket':ticket},follow_redirects=False).status_code==400
+        assert client.get(path).status_code==400
 
 
 def make_draft():

@@ -1,5 +1,6 @@
 """Authenticated Google connection endpoints and safe OAuth browser callbacks."""
-from fastapi import APIRouter,Depends,Request,HTTPException
+from html import escape
+from fastapi import APIRouter,Depends,Request,HTTPException,Form
 from fastapi.responses import HTMLResponse,RedirectResponse
 from pydantic import BaseModel,Field
 from app.auth import current_user
@@ -8,7 +9,7 @@ from app.services import google_oauth as google
 
 router=APIRouter(prefix='/api/integrations/google')
 HEADERS={'Cache-Control':'no-store','Referrer-Policy':'no-referrer',
-         'Content-Security-Policy':"default-src 'none'; frame-ancestors 'none'; base-uri 'none'"}
+         'Content-Security-Policy':"default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"}
 
 
 class ConfirmIn(BaseModel):
@@ -29,8 +30,20 @@ def authorize(service:str,u=Depends(current_user)): return google.start(u['id'],
 
 
 @router.get('/begin',include_in_schema=False)
-def begin(ticket:str):
+def landing(ticket:str):
     if len(ticket)>200: raise HTTPException(400,'Invalid connection link.')
+    service=google.preview(ticket)
+    permission='send email only after your separate approval in Scorpions AI' if service=='gmail' else 'read events on calendars you own, without modifying them'
+    html=('<h1>Connect Google securely</h1><p>This connection requests permission to '+permission+'.</p>'
+          '<form method="post" action="/api/integrations/google/begin">'
+          '<input type="hidden" name="ticket" value="'+escape(ticket,quote=True)+'">'
+          '<button type="submit">Continue to Google</button></form>'
+          '<p>Continue only if you started this connection from your signed-in Scorpions AI workspace.</p>')
+    return HTMLResponse(html,headers=HEADERS)
+
+
+@router.post('/begin',include_in_schema=False)
+def begin(ticket:str=Form(min_length=1,max_length=200)):
     url,nonce=google.begin(ticket)
     response=RedirectResponse(url,status_code=303,headers=HEADERS)
     response.set_cookie(google.COOKIE,nonce,max_age=600,secure=get_settings().app_env=='production',

@@ -68,6 +68,16 @@ def start(uid,service):
     return {'request_id':digest(state),'url':f'{u.scheme}://{u.netloc}/api/integrations/google/begin?'+urlencode({'ticket':state})}
 
 
+def preview(ticket):
+    """Validate a landing link without consuming it during GET or link preview."""
+    require_setup()
+    with session() as db:
+        row=db.execute('SELECT * FROM google_oauth_flows WHERE state_hash=?',(digest(ticket),)).fetchone()
+        if not row or row['used'] or row['browser_hash'] or row['created_at']<time.time()-600:
+            raise HTTPException(400,'Connection link expired or already used. Start again from your workspace.')
+    return row['service']
+
+
 def begin(ticket):
     require_setup()
     nonce=secrets.token_urlsafe(32)

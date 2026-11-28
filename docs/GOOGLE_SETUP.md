@@ -36,7 +36,7 @@ For development, the matching registered redirect is `http://127.0.0.1:8000/api/
 ## User flow and verification
 
 1. Sign into Scorpions AI and open Email & Calendar.
-2. Choose Connect Gmail sending or Connect Calendar reading, then Continue securely with Google. Complete Google's authorization yourself. Do not send your Google password or connection code to anyone.
+2. Choose Connect Gmail sending or Connect Calendar reading, then Continue securely with Google. On the backend landing page, press Continue to Google. Opening or previewing that landing link does not consume the connection; only the explicit POST button binds the browser and starts authorization. Complete Google's authorization yourself. Do not send your Google password or connection code to anyone.
 3. The callback displays a one-time 16-character code. Return to the exact signed-in workspace that started the connection, paste the code into its masked connection field and confirm. Consent alone does not activate a connection. This additional step binds Google's consent to the intended application account across Streamlit/backend domains.
 4. Calendar: click Read next seven days; verify only your primary calendar data appears. No calendar is changed.
 5. Gmail: save a synthetic draft addressed to an email account you own. Review the exact recipient, subject and body, check the explicit approval box and click Send approved email. Verify receipt and Sent mail. Do not test against other people without permission.
