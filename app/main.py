@@ -13,11 +13,16 @@ from fastapi.responses import JSONResponse, Response
 
 settings=get_settings()
 logging.basicConfig(level=settings.log_level, format='%(asctime)s %(levelname)s %(name)s %(message)s')
+# OAuth callbacks carry one-time codes in their query strings. Suppress Uvicorn
+# access logging rather than risk leaking codes/tickets in deployment logs.
+logging.getLogger('uvicorn.access').disabled=True
 @asynccontextmanager
 async def lifespan(_app):
     startup()
     yield
 app=FastAPI(title=settings.app_name, version='0.1.0', lifespan=lifespan)
+from app.google_routes import router as google_router
+app.include_router(google_router)
 
 @app.exception_handler(storage.StorageUnavailable)
 async def storage_error(request, error):
@@ -28,6 +33,7 @@ if settings.app_env != "production":
 app.add_middleware(CORSMiddleware, allow_origins=origins, allow_credentials=False, allow_methods=['GET','POST','PUT','DELETE'], allow_headers=['Authorization','Content-Type'])
 
 def startup():
+    logging.getLogger('uvicorn.access').disabled=True
     issues = settings.startup_issues()
     if issues and settings.app_env == 'production':
         raise RuntimeError(' '.join(issues))
@@ -250,7 +256,8 @@ def delete_document(doc_id:int,u=Depends(current_user)):
     return {'deleted':True}
 @app.get('/api/integrations')
 def integrations(u=Depends(current_user)):
-    return {'google':{'connected':False,'message':'Google OAuth setup is not enabled in this build.'},'research':{'connected':settings.web_search_provider=='wikipedia','provider':settings.web_search_provider},'llm':{'provider':settings.llm_provider,'configured':not settings.startup_issues()}}
+    from app.services.google_oauth import status
+    return {'google':status(u['id']),'research':{'connected':settings.web_search_provider=='wikipedia','provider':settings.web_search_provider},'llm':{'provider':settings.llm_provider,'configured':not settings.startup_issues()}}
 
 
 @app.post('/api/research/search')
@@ -276,6 +283,9 @@ def list_approvals(u=Depends(current_user)):
 def decide_approval(approval_id:int,decision:str,u=Depends(current_user)):
     if decision not in ('approve','reject'): raise HTTPException(422,'Decision must be approve or reject.')
     with session() as d:
+        action=d.execute('SELECT action FROM approvals WHERE id=? AND user_id=?',(approval_id,u['id'])).fetchone()
+        if action and action['action']=='google_send_email' and decision=='approve':
+            raise HTTPException(409,'Review the exact email and use its dedicated Send approval button.')
         cur=d.execute('UPDATE approvals SET status=? WHERE id=? AND user_id=? AND status=?',( 'approved' if decision=='approve' else 'rejected',approval_id,u['id'],'pending'))
         if not cur.rowcount: raise HTTPException(404,'Pending approval not found.')
         return dict(d.execute('SELECT * FROM approvals WHERE id=?',(approval_id,)).fetchone())

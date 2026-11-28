@@ -164,7 +164,38 @@ elif page=='Documents':
         if b.button('Delete',key='document'+str(doc['id'])):
             if api(f"/api/documents/{doc['id']}",'delete'): st.rerun()
 elif page=='Email & Calendar':
-    st.title('Email & Calendar'); st.warning('Google is disconnected. Drafts stay in your workspace; no messages are sent and calendar events are not modified.')
+    st.title('Email & Calendar')
+    google=api('/api/integrations/google/status') or {}
+    if not google.get('configured'):
+        st.info('Google connection is not available yet. Your drafts still work; the app operator must finish Google setup.')
+    st.caption('Gmail sends only after you review and approve an exact message. Calendar access is read-only. Google data is not sent to the AI model.')
+    for service,label in [('gmail','Gmail sending'),('calendar','Calendar reading')]:
+        connected=google.get(service+'_connected',False)
+        st.subheader(label)
+        st.caption('Connected' if connected else 'Disconnected')
+        if connected:
+            if st.button('Disconnect '+label,key='disconnect_'+service):
+                if api('/api/integrations/google/'+service,'delete'): st.rerun()
+        elif google.get('configured'):
+            if st.button('Connect '+label,key='connect_'+service):
+                request=api('/api/integrations/google/authorize/'+service,'post')
+                if request: st.session_state['google_request_'+service]=request
+            request=st.session_state.get('google_request_'+service)
+            if request:
+                st.link_button('Continue securely with Google',request['url'])
+                st.caption('After Google approval, copy the one-time code from the callback page and confirm it here. Do not share it in chat.')
+                code=st.text_input('One-time connection code',type='password',key='google_code_'+service)
+                if st.button('Confirm '+label,key='confirm_'+service):
+                    result=api('/api/integrations/google/confirm','post',json={'request_id':request['request_id'],'confirmation_code':code})
+                    if result:
+                        del st.session_state['google_request_'+service]
+                        st.rerun()
+    if google.get('calendar_connected') and st.button('Read next seven days of calendar events'):
+        events=api('/api/integrations/google/calendar/events')
+        if events is not None: st.session_state.google_events=events['events']
+    if google.get('calendar_connected') and 'google_events' in st.session_state:
+        if st.session_state.google_events: st.dataframe(st.session_state.google_events,use_container_width=True,hide_index=True)
+        else: st.info('No events returned for the next seven days.')
     with st.form('draft'):
         recipient=st.text_input('Recipient (optional)'); subject=st.text_input('Subject'); body=st.text_area('Draft message',height=180); saved=st.form_submit_button('Save draft')
     if saved:
@@ -175,11 +206,27 @@ elif page=='Email & Calendar':
         with st.expander(d['subject'] or '(no subject)'):
             st.caption(d.get('recipient') or 'No recipient'); st.write(d['body'])
             if st.button('Delete draft',key='draft'+str(d['id'])): api('/api/drafts/'+str(d['id']),'delete'); st.rerun()
+            if google.get('gmail_connected') and st.button('Review this email for sending',key='prepare'+str(d['id'])):
+                preview=api('/api/integrations/google/gmail/drafts/'+str(d['id'])+'/prepare','post')
+                if preview: st.session_state.google_send_preview=preview
+    if google.get('gmail_connected') and st.session_state.get('google_send_preview'):
+        preview=st.session_state.google_send_preview
+        st.subheader('Exact email awaiting your approval')
+        st.write('To: '+preview['recipient'])
+        st.write('Subject: '+preview['subject'])
+        st.text(preview['body'])
+        approve=st.checkbox('I approve sending this exact email now',key='send_check'+str(preview['approval_id']))
+        if st.button('Send approved email',disabled=not approve):
+            result=api('/api/integrations/google/gmail/send/'+str(preview['approval_id']),'post',json={'approve_send':True})
+            del st.session_state.google_send_preview
+            if result: st.success('Gmail accepted the message.')
+            else: st.warning('Check your Sent mail before preparing another send. This operation will not be retried automatically.')
     st.subheader('Pending approvals')
     for item in api('/api/approvals') or []:
         if item['status']=='pending':
             a,b,c=st.columns([5,1,1]); a.write(item['action'])
-            if b.button('Approve',key='approve'+str(item['id'])): api(f"/api/approvals/{item['id']}/approve",'post'); st.rerun()
+            if item['action']=='google_send_email': b.caption('Use the email review above to send.')
+            elif b.button('Approve',key='approve'+str(item['id'])): api(f"/api/approvals/{item['id']}/approve",'post'); st.rerun()
             if c.button('Reject',key='reject'+str(item['id'])): api(f"/api/approvals/{item['id']}/reject",'post'); st.rerun()
     st.caption('Approval is recorded only; no connected external action is performed.')
 elif page=='Settings':

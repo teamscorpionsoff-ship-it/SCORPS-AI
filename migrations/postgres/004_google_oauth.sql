@@ -1,0 +1,2 @@
+CREATE TABLE IF NOT EXISTS google_oauth_flows(state_hash TEXT PRIMARY KEY,user_id INTEGER NOT NULL,service TEXT NOT NULL,verifier_cipher TEXT NOT NULL,browser_hash TEXT,created_at BIGINT NOT NULL,used INTEGER DEFAULT 0,pending_cipher TEXT,confirm_hash TEXT,attempts INTEGER DEFAULT 0);
+CREATE TABLE IF NOT EXISTS google_tokens(user_id INTEGER NOT NULL,service TEXT NOT NULL,payload_cipher TEXT NOT NULL,PRIMARY KEY(user_id,service));
